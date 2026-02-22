@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import {
   Identity,
@@ -10,7 +10,7 @@ import {
 import type { SemaphoreProof } from "../utils/semaphore";
 
 const ZK_SIGN_MESSAGE =
-  "Sign this message to generate your AnonSocial ZK identity.\n\nThis signature is your private key — never share it.";
+  "Sign this message to generate your AnonSocial ZK identity.\n\nThis signature is your private key; never share it.";
 
 interface ZKPState {
   identity: Identity | null;
@@ -35,10 +35,6 @@ export function useZKP() {
     error: null,
   });
 
-  /**
-   * Generate (or retrieve) the ZK identity for the connected wallet.
-   * The identity is derived deterministically from a wallet signature.
-   */
   const generateIdentity = useCallback(async (): Promise<Identity> => {
     if (state.identity) return state.identity;
     if (!address) throw new Error("Wallet not connected");
@@ -57,28 +53,18 @@ export function useZKP() {
     }
   }, [address, signMessageAsync, state.identity]);
 
-  /**
-   * Generate a ZK proof for a post or vote action.
-   *
-   * @param groupMembers - Array of identity commitments (fetched from contract events)
-   * @param scope        - Unique scope string for the action
-   * @param message      - The signal to prove (ipfsHash or vote hash as bigint)
-   */
   const generateProof = useCallback(
     async (
       groupMembers: bigint[],
-      scope: string,
+      scope: string | bigint,
       message: bigint
     ): Promise<GeneratedProof> => {
       setState((s) => ({ ...s, isGeneratingProof: true, error: null }));
 
       try {
         const identity = await generateIdentity();
-
         const group = new Group(groupMembers);
-
         const semaphoreProof = await generateSemaphoreProof(identity, group, scope, message);
-
         const contractArgs = proofToContractArgs(semaphoreProof);
 
         setState((s) => ({ ...s, isGeneratingProof: false }));

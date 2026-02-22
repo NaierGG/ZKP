@@ -1,5 +1,5 @@
-import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { metaMask } from "wagmi/connectors";
+﻿import { useAccount, useConnect, useDisconnect } from "wagmi";
+import type { CSSProperties } from "react";
 
 function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -7,8 +7,11 @@ function shortenAddress(address: string): string {
 
 export function WalletConnect() {
   const { address, isConnected, isConnecting } = useAccount();
-  const { connect, error: connectError } = useConnect();
+  const { connect, connectors, error: connectError, isPending } = useConnect();
   const { disconnect } = useDisconnect();
+
+  const metaMaskConnector =
+    connectors.find((connector) => connector.id === "metaMask") ?? connectors[0];
 
   if (isConnected && address) {
     return (
@@ -18,7 +21,7 @@ export function WalletConnect() {
           <span style={styles.addr}>{shortenAddress(address)}</span>
         </div>
         <button style={styles.disconnectBtn} onClick={() => disconnect()}>
-          연결 해제
+          Disconnect
         </button>
       </div>
     );
@@ -27,20 +30,21 @@ export function WalletConnect() {
   return (
     <div style={styles.col}>
       <button
-        style={{ ...styles.connectBtn, opacity: isConnecting ? 0.7 : 1 }}
-        disabled={isConnecting}
-        onClick={() => connect({ connector: metaMask() })}
+        style={{ ...styles.connectBtn, opacity: isConnecting || isPending ? 0.7 : 1 }}
+        disabled={isConnecting || isPending || !metaMaskConnector}
+        onClick={() => {
+          if (!metaMaskConnector) return;
+          connect({ connector: metaMaskConnector });
+        }}
       >
-        {isConnecting ? "연결 중..." : "🦊 MetaMask 연결"}
+        {isConnecting || isPending ? "Connecting..." : "Connect MetaMask"}
       </button>
-      {connectError && (
-        <span style={styles.error}>{connectError.message}</span>
-      )}
+      {connectError && <span style={styles.error}>{connectError.message}</span>}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   row: { display: "flex", alignItems: "center", gap: 10 },
   col: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 },
   badge: {

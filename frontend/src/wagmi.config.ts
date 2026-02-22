@@ -3,10 +3,17 @@ import { sepolia } from "wagmi/chains";
 import { injected, metaMask } from "wagmi/connectors";
 
 export const wagmiConfig = createConfig({
+  ssr: false,
   chains: [sepolia],
   connectors: [
-    metaMask(),
-    injected(), // fallback for other injected wallets
+    metaMask({
+      dappMetadata: {
+        name: "AnonSocial",
+      },
+    }),
+    injected({
+      shimDisconnect: true,
+    }),
   ],
   transports: {
     [sepolia.id]: http(),

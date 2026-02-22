@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { useWatchContractEvent, useWriteContract, usePublicClient } from "wagmi";
+import { encodePacked, keccak256, parseAbiItem } from "viem";
+import type { CSSProperties } from "react";
 import { useZKP } from "../hooks/useZKP";
 import { useIPFS } from "../hooks/useIPFS";
-import { ipfsHashToBigInt } from "../utils/semaphore";
 import contractData from "../contracts/AnonSocial.json";
 
 interface Post {
-  id: string; // ipfsHash as bytes32
+  id: `0x${string}`;
   content: string;
   timestamp: number;
   votes: number;
@@ -14,63 +15,91 @@ interface Post {
 
 type VoteStep = "idle" | "proving" | "sending";
 
+const POST_CREATED_EVENT = parseAbiItem(
+  "event PostCreated(bytes32 indexed ipfsHash, uint256 timestamp)"
+);
+const MEMBER_JOINED_EVENT = parseAbiItem(
+  "event MemberJoined(uint256 identityCommitment)"
+);
+
 export function Feed() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [voteStep, setVoteStep] = useState<Record<string, VoteStep>>({});
   const [loading, setLoading] = useState(true);
 
   const { fetchFromIPFS } = useIPFS();
-  const { generateProof, getCommitment } = useZKP();
+  const { generateProof } = useZKP();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
 
+  const configuredAddress =
+    (import.meta.env.VITE_CONTRACT_ADDRESS as `0x${string}` | undefined) ||
+    (contractData.address as `0x${string}`);
+
   const contractConfig = {
-    address: contractData.address as `0x${string}`,
+    address: configuredAddress,
     abi: contractData.abi,
   } as const;
 
-  // ── Resolve IPFS content ─────────────────────────────────────────────────
+  const loadCommitments = useCallback(async (): Promise<bigint[]> => {
+    if (!publicClient) return [];
+
+    const logs = await publicClient.getLogs({
+      address: contractConfig.address,
+      event: MEMBER_JOINED_EVENT,
+      fromBlock: "earliest",
+      toBlock: "latest",
+    });
+
+    const unique = new Set(logs.map((log) => log.args.identityCommitment).filter(Boolean));
+    return [...unique] as bigint[];
+  }, [publicClient, contractConfig.address]);
+
   const resolvePost = useCallback(
-    async (ipfsHash: string, timestamp: number): Promise<Post | null> => {
+    async (ipfsHash: `0x${string}`, timestamp: number): Promise<Post | null> => {
       const content = await fetchFromIPFS(ipfsHash);
       if (!content) return null;
+
+      let votes = 0;
+      if (publicClient) {
+        try {
+          const onchainVotes = await publicClient.readContract({
+            ...contractConfig,
+            functionName: "getVotes",
+            args: [ipfsHash],
+          });
+          votes = Number(onchainVotes);
+        } catch {
+          votes = 0;
+        }
+      }
+
       return {
         id: ipfsHash,
         content: content.text,
         timestamp,
-        votes: 0,
+        votes,
       };
     },
-    [fetchFromIPFS]
+    [fetchFromIPFS, publicClient, contractConfig]
   );
 
-  // ── Load historical events on mount ─────────────────────────────────────
   useEffect(() => {
     if (!publicClient) return;
 
-    (async () => {
+    void (async () => {
       setLoading(true);
       try {
         const logs = await publicClient.getLogs({
-          address: contractData.address as `0x${string}`,
-          event: {
-            type: "event",
-            name: "PostCreated",
-            inputs: [
-              { type: "bytes32", name: "ipfsHash", indexed: true },
-              { type: "uint256", name: "timestamp", indexed: false },
-            ],
-          },
+          address: contractConfig.address,
+          event: POST_CREATED_EVENT,
           fromBlock: "earliest",
           toBlock: "latest",
         });
 
         const resolved = await Promise.all(
           logs.map((log) =>
-            resolvePost(
-              log.topics[1] as string,
-              Number((log as unknown as { args: { timestamp: bigint } }).args?.timestamp ?? 0n)
-            )
+            resolvePost(log.args.ipfsHash as `0x${string}`, Number(log.args.timestamp ?? 0n))
           )
         );
 
@@ -81,19 +110,16 @@ export function Feed() {
         setLoading(false);
       }
     })();
-  }, [publicClient, resolvePost]);
+  }, [publicClient, resolvePost, contractConfig.address]);
 
-  // ── Watch for new posts in real time ────────────────────────────────────
   useWatchContractEvent({
     ...contractConfig,
     eventName: "PostCreated",
     onLogs: async (logs) => {
-      for (const log of logs) {
-        const { ipfsHash, timestamp } = log.args as {
-          ipfsHash: `0x${string}`;
-          timestamp: bigint;
-        };
-        const post = await resolvePost(ipfsHash, Number(timestamp));
+      for (const log of logs as unknown as Array<{ args: { ipfsHash: `0x${string}`; timestamp: bigint } }>) {
+        const ipfsHash = log.args.ipfsHash;
+        const timestamp = Number(log.args.timestamp ?? 0n);
+        const post = await resolvePost(ipfsHash, timestamp);
         if (post) {
           setPosts((prev) => [post, ...prev]);
         }
@@ -101,47 +127,42 @@ export function Feed() {
     },
   });
 
-  // ── Watch for votes ──────────────────────────────────────────────────────
   useWatchContractEvent({
     ...contractConfig,
     eventName: "VoteCast",
     onLogs: (logs) => {
-      for (const log of logs) {
-        const { postId, upvote } = log.args as {
-          postId: `0x${string}`;
-          upvote: boolean;
-        };
+      for (const log of logs as unknown as Array<{ args: { postId: `0x${string}`; upvote: boolean } }>) {
+        const postId = log.args.postId;
+        const upvote = Boolean(log.args.upvote);
         setPosts((prev) =>
           prev.map((p) =>
-            p.id === postId
-              ? { ...p, votes: p.votes + (upvote ? 1 : -1) }
-              : p
+            p.id === postId ? { ...p, votes: p.votes + (upvote ? 1 : -1) } : p
           )
         );
       }
     },
   });
 
-  // ── Vote handler ─────────────────────────────────────────────────────────
   const handleVote = useCallback(
-    async (postId: string, upvote: boolean) => {
-      if (voteStep[postId]) return; // already voting
+    async (postId: `0x${string}`, upvote: boolean) => {
+      if (voteStep[postId] && voteStep[postId] !== "idle") return;
 
       setVoteStep((s) => ({ ...s, [postId]: "proving" }));
 
       try {
-        const commitment = await getCommitment();
+        const commitments = await loadCommitments();
+        if (commitments.length === 0) {
+          throw new Error("No group members found. Join the group first.");
+        }
+
         const message = BigInt(
-          `0x${Buffer.from(
-            new Uint8Array([...new TextEncoder().encode(postId + String(upvote))]).slice(0, 32)
-          ).toString("hex").padEnd(64, "0")}`
+          keccak256(encodePacked(["bytes32", "bool"], [postId, upvote]))
+        );
+        const scope = BigInt(
+          keccak256(encodePacked(["string", "bytes32"], ["anon-social-vote", postId]))
         );
 
-        const { contractArgs } = await generateProof(
-          [commitment],
-          `anon-social-vote-${postId}`,
-          message
-        );
+        const { contractArgs } = await generateProof(commitments, scope, message);
         const [depth, root, nullifier, points] = contractArgs;
 
         setVoteStep((s) => ({ ...s, [postId]: "sending" }));
@@ -149,7 +170,7 @@ export function Feed() {
         await writeContractAsync({
           ...contractConfig,
           functionName: "voteAnonymous",
-          args: [depth, root, nullifier, postId as `0x${string}`, upvote, points],
+          args: [depth, root, nullifier, postId, upvote, points],
         });
       } catch (err) {
         console.error("Vote failed:", err);
@@ -157,15 +178,13 @@ export function Feed() {
         setVoteStep((s) => ({ ...s, [postId]: "idle" }));
       }
     },
-    [voteStep, getCommitment, generateProof, writeContractAsync, contractConfig]
+    [voteStep, loadCommitments, generateProof, writeContractAsync, contractConfig]
   );
 
-  // ── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={styles.loading}>
-        <span style={styles.spinner}>⏳</span>
-        <span>게시글을 불러오는 중...</span>
+        <span>Loading posts...</span>
       </div>
     );
   }
@@ -173,8 +192,7 @@ export function Feed() {
   if (posts.length === 0) {
     return (
       <div style={styles.empty}>
-        <div style={styles.emptyIcon}>📭</div>
-        <p>아직 게시글이 없습니다. 첫 번째로 익명 글을 남겨보세요!</p>
+        <p>No posts yet. Be the first anonymous poster.</p>
       </div>
     );
   }
@@ -193,18 +211,17 @@ export function Feed() {
   );
 }
 
-// ── PostCard ─────────────────────────────────────────────────────────────────
 interface PostCardProps {
   post: Post;
-  onVote: (postId: string, upvote: boolean) => void;
+  onVote: (postId: `0x${string}`, upvote: boolean) => void;
   voteStep: VoteStep;
 }
 
 function PostCard({ post, onVote, voteStep }: PostCardProps) {
   const date = new Date(post.timestamp * 1000);
-  const timeStr = isNaN(date.getTime())
-    ? "방금 전"
-    : date.toLocaleString("ko-KR", {
+  const timeStr = Number.isNaN(date.getTime())
+    ? "just now"
+    : date.toLocaleString("en-US", {
         month: "short",
         day: "numeric",
         hour: "2-digit",
@@ -216,9 +233,9 @@ function PostCard({ post, onVote, voteStep }: PostCardProps) {
   return (
     <article style={styles.card}>
       <div style={styles.meta}>
-        <span style={styles.author}>익명 사용자</span>
-        <span style={styles.time}>• {timeStr}</span>
-        <span style={styles.zkBadge}>🔒 ZK</span>
+        <span style={styles.author}>Anonymous</span>
+        <span style={styles.time}>{timeStr}</span>
+        <span style={styles.zkBadge}>ZK</span>
       </div>
       <p style={styles.content}>{post.content}</p>
       <div style={styles.actions}>
@@ -226,30 +243,36 @@ function PostCard({ post, onVote, voteStep }: PostCardProps) {
           style={styles.voteBtn}
           onClick={() => onVote(post.id, true)}
           disabled={isVoting}
-          title="익명 좋아요"
+          title="Anonymous upvote"
         >
-          {isVoting && voteStep === "proving" ? "🔐" : isVoting ? "⏳" : "👍"}
-          <span>{post.votes > 0 ? `+${post.votes}` : post.votes < 0 ? post.votes : ""}</span>
+          <span>{isVoting && voteStep === "proving" ? "..." : "+"}</span>
+          <span>{post.votes > 0 ? `+${post.votes}` : post.votes < 0 ? post.votes : 0}</span>
         </button>
         <button
           style={{ ...styles.voteBtn, ...styles.downBtn }}
           onClick={() => onVote(post.id, false)}
           disabled={isVoting}
-          title="익명 싫어요"
+          title="Anonymous downvote"
         >
-          👎
+          -
         </button>
       </div>
     </article>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   feed: { display: "flex", flexDirection: "column", gap: 12 },
-  loading: { textAlign: "center", padding: 40, color: "#475569", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" },
-  spinner: { fontSize: 32, animation: "spin 1s linear infinite" },
-  empty: { textAlign: "center", padding: "60px 20px", color: "#334155" },
-  emptyIcon: { fontSize: 48, marginBottom: 16 },
+  loading: {
+    textAlign: "center",
+    padding: 40,
+    color: "#475569",
+  },
+  empty: {
+    textAlign: "center",
+    padding: "60px 20px",
+    color: "#334155",
+  },
   card: {
     background: "#111827",
     border: "1px solid #1e293b",
@@ -269,7 +292,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "1px 6px",
     color: "#4ade80",
   },
-  content: { color: "#e2e8f0", fontSize: 15, lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" },
+  content: {
+    color: "#e2e8f0",
+    fontSize: 15,
+    lineHeight: 1.7,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
   actions: { display: "flex", gap: 8, marginTop: 12, alignItems: "center" },
   voteBtn: {
     display: "flex",

@@ -14,6 +14,7 @@
     "hardhat": "^2.22.0"
   },
   "dependencies": {
-    "@semaphore-protocol/contracts": "^4.0.0"
+    "@semaphore-protocol/contracts": "^4.0.0",
+    "dotenv": "^17.3.1"
   }
 }
