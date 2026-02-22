@@ -1,0 +1,117 @@
+{
+  "address": "0x0000000000000000000000000000000000000000",
+  "network": "sepolia",
+  "deployedAt": "REPLACE_AFTER_DEPLOY",
+  "abi": [
+    {
+      "inputs": [{ "internalType": "address", "name": "_semaphore", "type": "address" }],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "NullifierAlreadyUsed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidProof",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": true, "internalType": "bytes32", "name": "ipfsHash", "type": "bytes32" },
+        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      ],
+      "name": "PostCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": true, "internalType": "bytes32", "name": "postId", "type": "bytes32" },
+        { "indexed": false, "internalType": "bool", "name": "upvote", "type": "bool" }
+      ],
+      "name": "VoteCast",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": false, "internalType": "uint256", "name": "identityCommitment", "type": "uint256" }
+      ],
+      "name": "MemberJoined",
+      "type": "event"
+    },
+    {
+      "inputs": [{ "internalType": "uint256", "name": "identityCommitment", "type": "uint256" }],
+      "name": "joinGroup",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "merkleTreeDepth", "type": "uint256" },
+        { "internalType": "uint256", "name": "merkleTreeRoot", "type": "uint256" },
+        { "internalType": "uint256", "name": "nullifierHash", "type": "uint256" },
+        { "internalType": "bytes32", "name": "ipfsHash", "type": "bytes32" },
+        { "internalType": "uint256[8]", "name": "proof", "type": "uint256[8]" }
+      ],
+      "name": "postAnonymous",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "merkleTreeDepth", "type": "uint256" },
+        { "internalType": "uint256", "name": "merkleTreeRoot", "type": "uint256" },
+        { "internalType": "uint256", "name": "nullifierHash", "type": "uint256" },
+        { "internalType": "bytes32", "name": "postId", "type": "bytes32" },
+        { "internalType": "bool", "name": "upvote", "type": "bool" },
+        { "internalType": "uint256[8]", "name": "proof", "type": "uint256[8]" }
+      ],
+      "name": "voteAnonymous",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [{ "internalType": "bytes32", "name": "postId", "type": "bytes32" }],
+      "name": "getVotes",
+      "outputs": [{ "internalType": "int256", "name": "", "type": "int256" }],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+      "name": "nullifiers",
+      "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+      "name": "postVotes",
+      "outputs": [{ "internalType": "int256", "name": "", "type": "int256" }],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "groupId",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "semaphore",
+      "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ]
+}
